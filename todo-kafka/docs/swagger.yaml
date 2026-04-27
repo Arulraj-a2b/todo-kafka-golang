@@ -1,0 +1,429 @@
+basePath: /
+definitions:
+  handlers.AuthRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: secret123
+        minLength: 6
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.AuthResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/models.User'
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        example: invalid request body
+        type: string
+    type: object
+  handlers.ImportResponse:
+    properties:
+      failed:
+        example: 3
+        type: integer
+      imported:
+        example: 42
+        type: integer
+    type: object
+  handlers.MessageResponse:
+    properties:
+      message:
+        example: todo deleted
+        type: string
+    type: object
+  handlers.TodoRequest:
+    properties:
+      due_date:
+        example: "2026-05-01T09:00:00Z"
+        format: date-time
+        type: string
+      priority:
+        allOf:
+        - $ref: '#/definitions/models.Priority'
+        enum:
+        - low
+        - medium
+        - high
+        example: medium
+      status:
+        allOf:
+        - $ref: '#/definitions/models.Status'
+        enum:
+        - pending
+        - in_progress
+        - completed
+        - deleted
+        example: pending
+      tags:
+        example:
+        - home
+        - errand
+        items:
+          type: string
+        type: array
+      title:
+        example: Buy milk
+        type: string
+    required:
+    - status
+    - title
+    type: object
+  handlers.TodosListResponse:
+    properties:
+      todos:
+        items:
+          $ref: '#/definitions/models.Todo'
+        type: array
+      total:
+        example: 3
+        type: integer
+    type: object
+  models.Priority:
+    enum:
+    - low
+    - medium
+    - high
+    type: string
+    x-enum-varnames:
+    - PriorityLow
+    - PriorityMedium
+    - PriorityHigh
+  models.Status:
+    enum:
+    - pending
+    - in_progress
+    - completed
+    - deleted
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusInProgress
+    - StatusCompleted
+    - StatusDeleted
+  models.Todo:
+    properties:
+      created_at:
+        type: string
+      due_date:
+        format: date-time
+        type: string
+      id:
+        type: string
+      priority:
+        $ref: '#/definitions/models.Priority'
+      status:
+        $ref: '#/definitions/models.Status'
+      tags:
+        items:
+          type: string
+        type: array
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  models.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+    type: object
+host: localhost:8000
+info:
+  contact: {}
+  description: Kafka-backed todo service with JWT auth and CSV import/export.
+  title: Todo-Kafka API
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates an existing user and returns a JWT.
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Log in
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: Creates a user and returns a JWT.
+      parameters:
+      - description: Credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Register a new user
+      tags:
+      - auth
+  /todos:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.TodosListResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List todos for the authenticated user
+      tags:
+      - todos
+    post:
+      consumes:
+      - application/json
+      description: Publishes a create event to Kafka and waits for the consumer to
+        confirm.
+      parameters:
+      - description: Todo to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.TodoRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Todo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a todo
+      tags:
+      - todos
+  /todos/{id}:
+    delete:
+      description: Publishes a delete event to Kafka and waits for confirmation.
+      parameters:
+      - description: Todo ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.MessageResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a todo
+      tags:
+      - todos
+    put:
+      consumes:
+      - application/json
+      description: Publishes an update event to Kafka and waits for confirmation.
+      parameters:
+      - description: Todo ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated todo
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.TodoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Todo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a todo
+      tags:
+      - todos
+  /todos/export:
+    get:
+      description: 'Returns the authenticated user''s todos as a CSV file (columns:
+        title,status,priority,due_date,tags). Tags are pipe-separated.'
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV download (todos.csv)
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Export todos as CSV
+      tags:
+      - todos
+  /todos/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 'Multipart upload. CSV columns: title,status,priority,due_date,tags
+        (tags pipe-separated). Each row is published to Kafka and confirmed by the
+        consumer.'
+      parameters:
+      - description: CSV file
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ImportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import todos from CSV
+      tags:
+      - todos
+schemes:
+- http
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer {token}" — get a token from /login or /register.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

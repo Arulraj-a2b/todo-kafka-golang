@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "todo-fe",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "todo-fe", "run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "todo-kafka",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd todo-kafka && go run ."],
+      "port": 8000
+    }
+  ]
+}

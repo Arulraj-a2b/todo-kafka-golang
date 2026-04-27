@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs file *)",
+      "Read(//Users/arulraj/Desktop/**)",
+      "Bash(find . -maxdepth 3 -type f \\\\\\( -name \"*.yml\" -o -name \"*.yaml\" -o -name \"Dockerfile*\" -o -name \"docker-compose*\" -o -name \".editorconfig\" \\\\\\))",
+      "Bash(npm create:*)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//opt/homebrew/opt/**)",
+      "Read(//Users/arulraj/**)",
+      "Read(//Users/arulraj/.nvm/versions/**)",
+      "Bash(bash -lc 'which node; which npm; node -v; npm -v')",
+      "Bash(export PATH=\"/Users/arulraj/n/bin:$PATH\")",
+      "Bash(npm install *)",
+      "Bash(npx tailwindcss *)",
+      "Bash(npm run *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(lsof -ti:5173)",
+      "Bash(xargs -r kill -9)",
+      "Bash(go build *)",
+      "Bash(go get *)",
+      "Bash(go mod *)",
+      "Bash(yarn add *)",
+      "Bash(yarn build *)",
+      "Bash(go install *)",
+      "Bash(go vet *)",
+      "Bash(/Users/arulraj/go/bin/swag init *)",
+      "Bash(go run *)",
+      "Bash(curl -s -o /dev/null -w \"swagger UI:    %{http_code}  size=%{size_download}\\\\n\" http://localhost:8000/swagger/index.html)",
+      "Bash(curl -s -o /dev/null -w \"swagger doc:   %{http_code}  size=%{size_download}\\\\n\" http://localhost:8000/swagger/doc.json)",
+      "Bash(curl -s http://localhost:8000/swagger/doc.json)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{m.upper\\(\\):6} {p}'\\) for p,ops in d['paths'].items\\(\\) for m in ops]\")"
+    ]
+  }
+}

@@ -6,12 +6,30 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"todo-kafka/email"
 	"todo-kafka/kafka/pending"
 	"todo-kafka/models"
 
 	"github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
 )
+
+func getUserEmail(userID string, db *sql.DB) (string, error) {
+	var addr string
+	err := db.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&addr)
+	return addr, err
+}
+
+func sendTodoEmail(event models.TodoEvent, db *sql.DB) {
+	addr, err := getUserEmail(event.Todo.UserID, db)
+	if err != nil {
+		log.Printf("email: user lookup failed for %s: %v", event.Todo.UserID, err)
+		return
+	}
+
+	subject, text, html := email.RenderTodo(event.Action, event.Todo)
+	email.Send(addr, "", subject, text, html)
+}
 
 func CreateTable(db *sql.DB) {
 	usersSQL := `
@@ -143,6 +161,14 @@ func InitConsumer(db *sql.DB) {
 		default:
 			log.Printf("Unknown event action %q", event.Action)
 			result = pending.Result{Status: pending.StatusError, Err: "unknown action"}
+		}
+
+		// Gate: send email ONLY for user-driven create/update that succeeded.
+		// SkipNotification is true for CSV imports (handlers/io.go) — those must NOT email.
+		if result.Status == pending.StatusOK &&
+			!event.SkipNotification &&
+			(event.Action == models.ActionCreate || event.Action == models.ActionUpdate) {
+			go sendTodoEmail(event, db)
 		}
 
 		pending.Completed(event.Todo.ID, result)

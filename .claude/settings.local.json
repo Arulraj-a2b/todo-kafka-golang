@@ -32,7 +32,8 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{m.upper\\(\\):6} {p}'\\) for p,ops in d['paths'].items\\(\\) for m in ops]\")",
       "Bash(npx vite *)",
       "Bash(npx eslint *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(echo \"---EXIT $?---\")"
     ]
   }
 }

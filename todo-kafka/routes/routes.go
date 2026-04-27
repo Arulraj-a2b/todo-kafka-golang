@@ -19,6 +19,7 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 	router.POST("/login", handlers.Login(db))
 
 	auth := router.Group("/", middleware.JWT())
+	auth.GET("/me", handlers.Me(db))
 	auth.GET("/todos", func(c *gin.Context) { handlers.GetTodos(c, db) })
 	auth.POST("/todos", handlers.CreateTodo)
 	auth.PUT("/todos/:id", handlers.UpdateTodo)

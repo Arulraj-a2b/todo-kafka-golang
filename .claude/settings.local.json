@@ -29,7 +29,10 @@
       "Bash(curl -s -o /dev/null -w \"swagger UI:    %{http_code}  size=%{size_download}\\\\n\" http://localhost:8000/swagger/index.html)",
       "Bash(curl -s -o /dev/null -w \"swagger doc:   %{http_code}  size=%{size_download}\\\\n\" http://localhost:8000/swagger/doc.json)",
       "Bash(curl -s http://localhost:8000/swagger/doc.json)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{m.upper\\(\\):6} {p}'\\) for p,ops in d['paths'].items\\(\\) for m in ops]\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'{m.upper\\(\\):6} {p}'\\) for p,ops in d['paths'].items\\(\\) for m in ops]\")",
+      "Bash(npx vite *)",
+      "Bash(npx eslint *)",
+      "Bash(git stash *)"
     ]
   }
 }

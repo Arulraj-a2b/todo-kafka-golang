@@ -17,3 +17,8 @@ export async function register(email, password) {
     throw extractError(err, 'Registration failed')
   }
 }
+
+export async function me() {
+  const { data } = await client.get('/me')
+  return data.user
+}

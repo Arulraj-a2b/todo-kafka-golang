@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -105,20 +106,48 @@ func ImportTodos(c *gin.Context) {
 	}
 
 	imported, failed := 0, 0
+	errors := []string{}
 	for i, row := range rows {
 		if i == 0 {
 			continue
 		}
+		rowNum := i + 1
 		if len(row) < 5 {
 			failed++
+			errors = append(errors, fmt.Sprintf("row %d: expected 5 columns, got %d", rowNum, len(row)))
+			continue
+		}
+
+		title := strings.TrimSpace(row[0])
+		if title == "" {
+			failed++
+			errors = append(errors, fmt.Sprintf("row %d: title is required", rowNum))
+			continue
+		}
+
+		status := models.Status(strings.TrimSpace(row[1]))
+		if !isValidStatus(status) {
+			failed++
+			errors = append(errors, fmt.Sprintf("row %d: invalid status %q (allowed: pending, in_progress, completed, deleted)", rowNum, row[1]))
+			continue
+		}
+
+		priority := models.Priority(strings.TrimSpace(row[2]))
+		if !isValidPriority(priority) {
+			failed++
+			errors = append(errors, fmt.Sprintf("row %d: invalid priority %q (allowed: low, medium, high)", rowNum, row[2]))
 			continue
 		}
 
 		var due *time.Time
 		if strings.TrimSpace(row[3]) != "" {
-			if t, err := time.Parse(time.RFC3339, row[3]); err == nil {
-				due = &t
+			t, err := time.Parse(time.RFC3339, strings.TrimSpace(row[3]))
+			if err != nil {
+				failed++
+				errors = append(errors, fmt.Sprintf("row %d: invalid due_date %q (expected RFC3339, e.g. 2026-05-01T09:00:00Z)", rowNum, row[3]))
+				continue
 			}
+			due = &t
 		}
 
 		tags := []string{}
@@ -126,19 +155,10 @@ func ImportTodos(c *gin.Context) {
 			tags = strings.Split(row[4], "|")
 		}
 
-		status := models.Status(row[1])
-		if !isValidStatus(status) {
-			status = models.StatusPending
-		}
-		priority := models.Priority(row[2])
-		if !isValidPriority(priority) {
-			priority = models.PriorityMedium
-		}
-
 		todo := models.Todo{
 			ID:        uuid.New().String(),
 			UserID:    userID,
-			Title:     row[0],
+			Title:     title,
 			Status:    status,
 			Priority:  priority,
 			DueDate:   due,
@@ -165,6 +185,7 @@ func ImportTodos(c *gin.Context) {
 		}); err != nil {
 			log.Printf("Import Kafka write failed: %v", err)
 			failed++
+			errors = append(errors, fmt.Sprintf("row %d: failed to enqueue", rowNum))
 			continue
 		}
 
@@ -174,11 +195,13 @@ func ImportTodos(c *gin.Context) {
 				imported++
 			} else {
 				failed++
+				errors = append(errors, fmt.Sprintf("row %d: persistence failed", rowNum))
 			}
 		case <-time.After(10 * time.Second):
 			failed++
+			errors = append(errors, fmt.Sprintf("row %d: timed out waiting for confirmation", rowNum))
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"imported": imported, "failed": failed})
+	c.JSON(http.StatusOK, gin.H{"imported": imported, "failed": failed, "errors": errors})
 }

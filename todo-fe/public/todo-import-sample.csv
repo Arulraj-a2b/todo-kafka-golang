@@ -1,0 +1,6 @@
+title,status,priority,due_date,tags
+Buy groceries,pending,medium,2026-05-01T09:00:00Z,home|errand
+Write project proposal,in_progress,high,2026-05-03T17:00:00Z,work|writing
+Schedule dentist appointment,pending,low,,health
+Review PR #42,in_progress,medium,2026-04-29T18:00:00Z,work|code-review
+Read chapter 5,completed,low,,reading|personal

@@ -105,3 +105,35 @@ func Login(db *sql.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"user": user, "token": token})
 	}
 }
+
+// Me godoc
+// @Summary      Get the current user
+// @Description  Returns the authenticated user identified by the JWT.
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  MeResponse
+// @Failure      401  {object}  ErrorResponse
+// @Router       /me [get]
+func Me(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID, _ := c.Get("user_id")
+		uid, ok := userID.(string)
+		if !ok || uid == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+
+		var user models.User
+		err := db.QueryRow(
+			`SELECT id, email, password_hash, created_at FROM users WHERE id = $1`,
+			uid,
+		).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.CreatedAt)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"user": user})
+	}
+}

@@ -44,10 +44,11 @@ export default function Header({ counts, onImported }) {
       setNotice({
         type: res.failed > 0 ? 'warn' : 'ok',
         text: `Imported ${res.imported}${res.failed ? `, ${res.failed} failed` : ''}.`,
+        errors: Array.isArray(res.errors) ? res.errors : [],
       })
-      onImported?.()
+      if (res.imported > 0) onImported?.()
     } catch (err) {
-      setNotice({ type: 'error', text: err.message || 'Import failed' })
+      setNotice({ type: 'error', text: err.message || 'Import failed', errors: [] })
     } finally {
       setImporting(false)
     }
@@ -103,6 +104,15 @@ export default function Header({ counts, onImported }) {
             Import CSV
           </button>
 
+          <a
+            href="/todo-import-sample.csv"
+            download="todo-import-sample.csv"
+            className="text-xs font-medium text-indigo-600 underline-offset-2 hover:text-indigo-700 hover:underline"
+            title="Download a sample CSV showing the expected import format"
+          >
+            Sample CSV
+          </a>
+
           <input
             ref={fileRef}
             type="file"
@@ -152,7 +162,19 @@ export default function Header({ counts, onImported }) {
                 : 'bg-emerald-50 text-emerald-800 ring-emerald-200'
           }`}
         >
-          {notice.text}
+          <div>{notice.text}</div>
+          {notice.errors?.length > 0 && (
+            <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+              {notice.errors.slice(0, 10).map((msg, idx) => (
+                <li key={idx}>{msg}</li>
+              ))}
+              {notice.errors.length > 10 && (
+                <li className="list-none italic opacity-75">
+                  …and {notice.errors.length - 10} more
+                </li>
+              )}
+            </ul>
+          )}
         </div>
       )}
     </header>

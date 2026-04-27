@@ -11,14 +11,24 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import './App.css'
 
+function FullScreenSpinner() {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <Spinner size="lg" />
+    </div>
+  )
+}
+
 function ProtectedRoute({ children }) {
-  const { token } = useAuth()
+  const { token, bootstrapping } = useAuth()
+  if (bootstrapping) return <FullScreenSpinner />
   if (!token) return <Navigate to="/login" replace />
   return children
 }
 
 function PublicOnlyRoute({ children }) {
-  const { token } = useAuth()
+  const { token, bootstrapping } = useAuth()
+  if (bootstrapping) return <FullScreenSpinner />
   if (token) return <Navigate to="/" replace />
   return children
 }

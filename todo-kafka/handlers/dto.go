@@ -15,6 +15,10 @@ type AuthResponse struct {
 	Token string      `json:"token"`
 }
 
+type MeResponse struct {
+	User models.User `json:"user"`
+}
+
 type TodoRequest struct {
 	Title    string          `json:"title" binding:"required" example:"Buy milk"`
 	Status   models.Status   `json:"status" binding:"required" example:"pending" enums:"pending,in_progress,completed,deleted"`
@@ -37,6 +41,7 @@ type ErrorResponse struct {
 }
 
 type ImportResponse struct {
-	Imported int `json:"imported" example:"42"`
-	Failed   int `json:"failed" example:"3"`
+	Imported int      `json:"imported" example:"42"`
+	Failed   int      `json:"failed" example:"3"`
+	Errors   []string `json:"errors" example:"row 3: invalid status \"in_progresssss\""`
 }

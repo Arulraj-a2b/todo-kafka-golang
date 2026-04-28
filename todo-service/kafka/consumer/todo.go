@@ -6,47 +6,30 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"todo-kafka/email"
-	"todo-kafka/kafka/pending"
-	"todo-kafka/models"
+	"todo-service/email"
+	"todo-service/kafka/pending"
+	"todo-service/models"
 
 	"github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
 )
 
-func getUserEmail(userID string, db *sql.DB) (string, error) {
-	var addr string
-	err := db.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&addr)
-	return addr, err
-}
-
-func sendTodoEmail(event models.TodoEvent, db *sql.DB) {
-	addr, err := getUserEmail(event.Todo.UserID, db)
-	if err != nil {
-		log.Printf("email: user lookup failed for %s: %v", event.Todo.UserID, err)
+func sendTodoEmail(event models.TodoEvent) {
+	if event.UserEmail == "" {
+		log.Printf("email: no recipient on event for todo %s", event.Todo.ID)
 		return
 	}
-
 	subject, text, html := email.RenderTodo(event.Action, event.Todo)
-	email.Send(addr, "", subject, text, html)
+	email.Send(event.UserEmail, "", subject, text, html)
 }
 
 func CreateTable(db *sql.DB) {
-	usersSQL := `
-	CREATE TABLE IF NOT EXISTS users (
-		id TEXT PRIMARY KEY,
-		email TEXT UNIQUE NOT NULL,
-		password_hash TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL
-	);`
-	if _, err := db.Exec(usersSQL); err != nil {
-		log.Printf("Failed to create users table: %v", err)
-	}
-
+	// users table lives in auth-service/auth_db. todo-service trusts the JWT
+	// for identity instead of a foreign key, so user_id is just an opaque string.
 	todosSQL := `
 	CREATE TABLE IF NOT EXISTS todos (
 		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL REFERENCES users(id),
+		user_id TEXT NOT NULL,
 		title TEXT NOT NULL,
 		status TEXT NOT NULL,
 		priority TEXT NOT NULL DEFAULT 'medium',
@@ -168,7 +151,7 @@ func InitConsumer(db *sql.DB) {
 		if result.Status == pending.StatusOK &&
 			!event.SkipNotification &&
 			(event.Action == models.ActionCreate || event.Action == models.ActionUpdate) {
-			go sendTodoEmail(event, db)
+			go sendTodoEmail(event)
 		}
 
 		pending.Completed(event.Todo.ID, result)

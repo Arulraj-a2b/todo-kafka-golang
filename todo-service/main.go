@@ -3,11 +3,11 @@ package main
 import (
 	"database/sql"
 	"log"
-	"todo-kafka/database"
-	_ "todo-kafka/docs"
-	"todo-kafka/kafka/consumer"
-	"todo-kafka/kafka/producer"
-	"todo-kafka/routes"
+	"todo-service/database"
+	_ "todo-service/docs"
+	"todo-service/kafka/consumer"
+	"todo-service/kafka/producer"
+	"todo-service/routes"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"

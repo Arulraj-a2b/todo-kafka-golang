@@ -7,9 +7,9 @@ import (
 	"log"
 	"net/http"
 	"time"
-	"todo-kafka/kafka/pending"
-	"todo-kafka/kafka/producer"
-	"todo-kafka/models"
+	"todo-service/kafka/pending"
+	"todo-service/kafka/producer"
+	"todo-service/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -88,6 +88,7 @@ func GetTodos(c *gin.Context, db *sql.DB) {
 // @Router       /todos [post]
 func CreateTodo(c *gin.Context) {
 	userID := c.GetString("user_id")
+	userEmail := c.GetString("email")
 
 	var payload TodoRequest
 
@@ -129,7 +130,11 @@ func CreateTodo(c *gin.Context) {
 
 	completed := pending.Register(newTodo.ID)
 
-	eventJSON, err := json.Marshal(models.TodoEvent{Action: models.ActionCreate, Todo: newTodo})
+	eventJSON, err := json.Marshal(models.TodoEvent{
+		Action:    models.ActionCreate,
+		Todo:      newTodo,
+		UserEmail: userEmail,
+	})
 	if err != nil {
 		log.Printf("Failed to marshal todo event: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal todo"})
@@ -232,6 +237,7 @@ func DeleteTodo(c *gin.Context) {
 func UpdateTodo(c *gin.Context) {
 	id := c.Param("id")
 	userID := c.GetString("user_id")
+	userEmail := c.GetString("email")
 
 	var payload TodoRequest
 
@@ -272,7 +278,11 @@ func UpdateTodo(c *gin.Context) {
 
 	completed := pending.Register(id)
 
-	eventJSON, err := json.Marshal(models.TodoEvent{Action: models.ActionUpdate, Todo: updatedTodo})
+	eventJSON, err := json.Marshal(models.TodoEvent{
+		Action:    models.ActionUpdate,
+		Todo:      updatedTodo,
+		UserEmail: userEmail,
+	})
 	if err != nil {
 		log.Printf("Failed to marshal todo event: %v", err)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal todo"})

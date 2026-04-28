@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"todo-kafka/models"
+	"todo-service/models"
 )
 
 type todoEmailData struct {

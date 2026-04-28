@@ -4,13 +4,13 @@ import (
 	"database/sql"
 	"log"
 	"os"
-	"todo-kafka/kafka/consumer"
+	"todo-service/kafka/consumer"
 )
 
 func InitDB() *sql.DB {
-	connStr := os.Getenv("DATABASE_URL")
+	connStr := os.Getenv("TODO_DATABASE_URL")
 	if connStr == "" {
-		log.Fatal("DATABASE_URL not set")
+		log.Fatal("TODO_DATABASE_URL not set")
 	}
 
 	db, err := sql.Open("postgres", connStr)
@@ -22,7 +22,7 @@ func InitDB() *sql.DB {
 		log.Fatal(err)
 	}
 
-	log.Println("Database connected")
+	log.Println("Todo DB connected")
 
 	consumer.CreateTable(db)
 

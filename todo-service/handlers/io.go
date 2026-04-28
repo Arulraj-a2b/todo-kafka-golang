@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"todo-kafka/kafka/pending"
-	"todo-kafka/kafka/producer"
-	"todo-kafka/models"
+	"todo-service/kafka/pending"
+	"todo-service/kafka/producer"
+	"todo-service/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

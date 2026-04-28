@@ -2,22 +2,8 @@ package handlers
 
 import (
 	"time"
-	"todo-kafka/models"
+	"todo-service/models"
 )
-
-type AuthRequest struct {
-	Email    string `json:"email" binding:"required,email" example:"user@example.com"`
-	Password string `json:"password" binding:"required,min=6" example:"secret123"`
-}
-
-type AuthResponse struct {
-	User  models.User `json:"user"`
-	Token string      `json:"token"`
-}
-
-type MeResponse struct {
-	User models.User `json:"user"`
-}
 
 type TodoRequest struct {
 	Title    string          `json:"title" binding:"required" example:"Buy milk"`

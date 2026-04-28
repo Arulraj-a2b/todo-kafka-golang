@@ -1,4 +1,4 @@
-module todo-kafka
+module todo-service
 
 go 1.25.0
 

@@ -15,17 +15,17 @@ import (
 
 var db *sql.DB
 
-// @title           Todo-Kafka API
+// @title           Todo Service API
 // @version         1.0
-// @description     Kafka-backed todo service with JWT auth and CSV import/export.
-// @host            localhost:8000
+// @description     Kafka-backed todo service. Verifies JWTs issued by auth-service.
+// @host            localhost:8001
 // @BasePath        /
 // @schemes         http
 
 // @securityDefinitions.apikey  BearerAuth
 // @in                          header
 // @name                        Authorization
-// @description                 Type "Bearer {token}" — get a token from /login or /register.
+// @description                 Type "Bearer {token}" — obtain one from auth-service at :8000.
 func main() {
 	err := godotenv.Load()
 	if err != nil {

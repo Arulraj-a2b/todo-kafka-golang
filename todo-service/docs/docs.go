@@ -15,104 +15,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/login": {
-            "post": {
-                "description": "Authenticates an existing user and returns a JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Log in",
-                "parameters": [
-                    {
-                        "description": "Credentials",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/register": {
-            "post": {
-                "description": "Creates a user and returns a JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Register a new user",
-                "parameters": [
-                    {
-                        "description": "Credentials",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/todos": {
             "get": {
                 "security": [
@@ -430,35 +332,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handlers.AuthRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 6,
-                    "example": "secret123"
-                }
-            }
-        },
-        "handlers.AuthResponse": {
-            "type": "object",
-            "properties": {
-                "token": {
-                    "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/models.User"
-                }
-            }
-        },
         "handlers.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -471,6 +344,15 @@ const docTemplate = `{
         "handlers.ImportResponse": {
             "type": "object",
             "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "row 3: invalid status \"in_progresssss\""
+                    ]
+                },
                 "failed": {
                     "type": "integer",
                     "example": 3
@@ -623,25 +505,11 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "models.User": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                }
-            }
         }
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer {token}\" — get a token from /login or /register.",
+            "description": "Type \"Bearer {token}\" — obtain one from auth-service at :8000.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"
@@ -652,11 +520,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8000",
+	Host:             "localhost:8001",
 	BasePath:         "/",
 	Schemes:          []string{"http"},
-	Title:            "Todo-Kafka API",
-	Description:      "Kafka-backed todo service with JWT auth and CSV import/export.",
+	Title:            "Todo Service API",
+	Description:      "Kafka-backed todo service. Verifies JWTs issued by auth-service.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

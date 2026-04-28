@@ -1,25 +1,5 @@
 basePath: /
 definitions:
-  handlers.AuthRequest:
-    properties:
-      email:
-        example: user@example.com
-        type: string
-      password:
-        example: secret123
-        minLength: 6
-        type: string
-    required:
-    - email
-    - password
-    type: object
-  handlers.AuthResponse:
-    properties:
-      token:
-        type: string
-      user:
-        $ref: '#/definitions/models.User'
-    type: object
   handlers.ErrorResponse:
     properties:
       error:
@@ -28,6 +8,12 @@ definitions:
     type: object
   handlers.ImportResponse:
     properties:
+      errors:
+        example:
+        - 'row 3: invalid status "in_progresssss"'
+        items:
+          type: string
+        type: array
       failed:
         example: 3
         type: integer
@@ -134,86 +120,13 @@ definitions:
       user_id:
         type: string
     type: object
-  models.User:
-    properties:
-      created_at:
-        type: string
-      email:
-        type: string
-      id:
-        type: string
-    type: object
-host: localhost:8000
+host: localhost:8001
 info:
   contact: {}
-  description: Kafka-backed todo service with JWT auth and CSV import/export.
-  title: Todo-Kafka API
+  description: Kafka-backed todo service. Verifies JWTs issued by auth-service.
+  title: Todo Service API
   version: "1.0"
 paths:
-  /login:
-    post:
-      consumes:
-      - application/json
-      description: Authenticates an existing user and returns a JWT.
-      parameters:
-      - description: Credentials
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.AuthRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/handlers.AuthResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Log in
-      tags:
-      - auth
-  /register:
-    post:
-      consumes:
-      - application/json
-      description: Creates a user and returns a JWT.
-      parameters:
-      - description: Credentials
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.AuthRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/handlers.AuthResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/handlers.ErrorResponse'
-      summary: Register a new user
-      tags:
-      - auth
   /todos:
     get:
       produces:
@@ -422,7 +335,7 @@ schemes:
 - http
 securityDefinitions:
   BearerAuth:
-    description: Type "Bearer {token}" — get a token from /login or /register.
+    description: Type "Bearer {token}" — obtain one from auth-service at :8000.
     in: header
     name: Authorization
     type: apiKey

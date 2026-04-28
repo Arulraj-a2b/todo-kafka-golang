@@ -4,112 +4,14 @@
     ],
     "swagger": "2.0",
     "info": {
-        "description": "Kafka-backed todo service with JWT auth and CSV import/export.",
-        "title": "Todo-Kafka API",
+        "description": "Kafka-backed todo service. Verifies JWTs issued by auth-service.",
+        "title": "Todo Service API",
         "contact": {},
         "version": "1.0"
     },
-    "host": "localhost:8000",
+    "host": "localhost:8001",
     "basePath": "/",
     "paths": {
-        "/login": {
-            "post": {
-                "description": "Authenticates an existing user and returns a JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Log in",
-                "parameters": [
-                    {
-                        "description": "Credentials",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/register": {
-            "post": {
-                "description": "Creates a user and returns a JWT.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Register a new user",
-                "parameters": [
-                    {
-                        "description": "Credentials",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.AuthResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/todos": {
             "get": {
                 "security": [
@@ -427,35 +329,6 @@
         }
     },
     "definitions": {
-        "handlers.AuthRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "password": {
-                    "type": "string",
-                    "minLength": 6,
-                    "example": "secret123"
-                }
-            }
-        },
-        "handlers.AuthResponse": {
-            "type": "object",
-            "properties": {
-                "token": {
-                    "type": "string"
-                },
-                "user": {
-                    "$ref": "#/definitions/models.User"
-                }
-            }
-        },
         "handlers.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -468,6 +341,15 @@
         "handlers.ImportResponse": {
             "type": "object",
             "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "row 3: invalid status \"in_progresssss\""
+                    ]
+                },
                 "failed": {
                     "type": "integer",
                     "example": 3
@@ -620,25 +502,11 @@
                     "type": "string"
                 }
             }
-        },
-        "models.User": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                }
-            }
         }
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Type \"Bearer {token}\" — get a token from /login or /register.",
+            "description": "Type \"Bearer {token}\" — obtain one from auth-service at :8000.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

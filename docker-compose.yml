@@ -44,6 +44,30 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_NUM_PARTITIONS: 12
 
+  # Tiny one-shot container that creates required topics after Kafka is up.
+  # Auto-create works for most cases but fails when a producer races startup
+  # before Kafka has registered the partition leader. Pre-creating both
+  # topics removes the race window.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [kafka]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "waiting for Kafka..."
+        for i in $$(seq 1 30); do
+          kafka-topics --bootstrap-server kafka:29092 --list >/dev/null 2>&1 && break
+          sleep 2
+        done
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+          --topic todos --partitions 12 --replication-factor 1
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists \
+          --topic email.events --partitions 12 --replication-factor 1
+        echo "topics ready:"
+        kafka-topics --bootstrap-server kafka:29092 --list
+    restart: "no"
+
   auth-service:
     build: ./auth-service
     depends_on:
@@ -105,6 +129,8 @@ services:
       KAFKA_BROKER: kafka:29092
       KAFKA_TOPIC: todos
       KAFKA_GROUP_ID: notification-worker
+      KAFKA_EMAIL_TOPIC: email.events
+      KAFKA_EMAIL_GROUP_ID: notification-worker-email
       REDIS_URL: redis://redis:6379
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-arulraj@vananam.com}
@@ -117,6 +143,33 @@ services:
       TRACE_SAMPLE_RATE: "1.0"
     deploy:
       replicas: 2
+
+  email-scheduler:
+    build: ./email-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    environment:
+      AUTH_DATABASE_URL: postgres://arul_todo:arul@postgres:5432/auth_db?sslmode=disable
+      TODO_DATABASE_URL: postgres://arul_todo:arul@postgres:5432/todo_db?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKER: kafka:29092
+      KAFKA_EMAIL_TOPIC: email.events
+      OVERDUE_SCAN_INTERVAL: ${OVERDUE_SCAN_INTERVAL:-5m}
+      DAILY_SUMMARY_CRON: ${DAILY_SUMMARY_CRON:-0 9 * * *}
+      METRICS_PORT: "9101"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      OTEL_SERVICE_NAME: email-scheduler
+      LOG_FORMAT: json
+      LOG_LEVEL: info
+      TRACE_SAMPLE_RATE: "1.0"
+    # Single replica — two would double-fire the daily summary.
 
   gateway-service:
     build: ./gateway-service

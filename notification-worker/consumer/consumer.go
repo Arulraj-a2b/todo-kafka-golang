@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"notification-worker/email"
@@ -22,15 +23,34 @@ import (
 
 var tracer = otel.Tracer("notification-worker.consumer")
 
-// Run starts the Kafka consumer loop. Each event triggers two side effects:
-//   1. Email notification (create/update only, when UserEmail present)
-//   2. Cache invalidation: delete the user's first-page todos cache key
+// Run starts two parallel Kafka consumer loops:
 //
-// Trace context flows in via the W3C traceparent Kafka header, so the
-// consumer span is a child of the producer's span — the entire pipeline
-// shows up as one trace in Jaeger.
+//   - todos topic       — CRUD events from todo-service handlers. Drives
+//                         create/update emails AND cache invalidation.
+//   - email.events topic — scheduled events from email-scheduler. Drives
+//                          overdue + daily-summary emails. No cache logic.
+//
+// Each loop runs in its own goroutine. Run blocks until ctx is cancelled.
 func Run(ctx context.Context, rdb *redis.Client) {
-	topic := envOrDefault("KAFKA_TOPIC", "todos")
+	todosTopic := envOrDefault("KAFKA_TOPIC", "todos")
+	emailTopic := envOrDefault("KAFKA_EMAIL_TOPIC", "email.events")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		runTodosLoop(ctx, rdb, todosTopic)
+	}()
+	go func() {
+		defer wg.Done()
+		runEmailLoop(ctx, emailTopic)
+	}()
+	wg.Wait()
+}
+
+// ---------- todos topic loop (CRUD events) ----------
+
+func runTodosLoop(ctx context.Context, rdb *redis.Client, topic string) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{os.Getenv("KAFKA_BROKER")},
 		Topic:       topic,
@@ -38,7 +58,6 @@ func Run(ctx context.Context, rdb *redis.Client) {
 		StartOffset: kafka.LastOffset,
 	})
 	defer reader.Close()
-
 	slog.Info("notification-worker consuming Kafka", "topic", topic)
 
 	for {
@@ -47,31 +66,15 @@ func Run(ctx context.Context, rdb *redis.Client) {
 			if ctx.Err() != nil {
 				return
 			}
-			slog.Error("kafka read error", "err", err)
+			slog.Error("kafka read error", "topic", topic, "err", err)
 			continue
 		}
-		handleMessage(ctx, rdb, topic, msg)
+		handleTodosMessage(ctx, rdb, topic, msg)
 	}
 }
 
-func handleMessage(parent context.Context, rdb *redis.Client, topic string, msg kafka.Message) {
-	// Extract upstream trace context from Kafka headers — that's how the
-	// trace continues from todo-service across the broker.
-	carrier := propagation.MapCarrier{}
-	for _, h := range msg.Headers {
-		carrier[h.Key] = string(h.Value)
-	}
-	ctx := otel.GetTextMapPropagator().Extract(parent, carrier)
-	ctx, span := tracer.Start(ctx, "kafka.consume "+topic,
-		trace.WithSpanKind(trace.SpanKindConsumer),
-		trace.WithAttributes(
-			attribute.String("messaging.system", "kafka"),
-			attribute.String("messaging.destination.name", topic),
-			attribute.String("messaging.kafka.message.key", string(msg.Key)),
-			attribute.Int64("messaging.kafka.partition", int64(msg.Partition)),
-			attribute.Int64("messaging.kafka.offset", msg.Offset),
-		),
-	)
+func handleTodosMessage(parent context.Context, rdb *redis.Client, topic string, msg kafka.Message) {
+	ctx, span := startConsumerSpan(parent, topic, msg)
 	defer span.End()
 
 	start := time.Now()
@@ -94,18 +97,124 @@ func handleMessage(parent context.Context, rdb *redis.Client, topic string, msg 
 		attribute.String("todo.action", event.Action),
 	)
 
-	// 1. Email — fire on create/update with a recipient.
+	// 1. Email on create/update.
 	if (event.Action == models.ActionCreate || event.Action == models.ActionUpdate) && event.UserEmail != "" {
 		subject, text, html := email.RenderTodo(event.Action, event.Todo)
 		email.Send(ctx, event.UserEmail, "", subject, text, html)
 	}
 
-	// 2. Cache invalidation — delete the user's todo-list cache regardless of action.
+	// 2. Cache invalidation regardless of action.
 	if rdb != nil && event.Todo.UserID != "" {
 		invalidateUserTodoListCache(ctx, rdb, event.Todo.UserID)
 	}
 
 	obs.KafkaConsumedTotal.WithLabelValues(topic, "ok").Inc()
+}
+
+// ---------- email.events topic loop (scheduled events) ----------
+
+func runEmailLoop(ctx context.Context, topic string) {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:     []string{os.Getenv("KAFKA_BROKER")},
+		Topic:       topic,
+		GroupID:     envOrDefault("KAFKA_EMAIL_GROUP_ID", "notification-worker-email"),
+		StartOffset: kafka.LastOffset,
+	})
+	defer reader.Close()
+	slog.Info("notification-worker consuming Kafka", "topic", topic)
+
+	for {
+		msg, err := reader.ReadMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			slog.Error("kafka read error", "topic", topic, "err", err)
+			continue
+		}
+		handleEmailMessage(ctx, topic, msg)
+	}
+}
+
+func handleEmailMessage(parent context.Context, topic string, msg kafka.Message) {
+	ctx, span := startConsumerSpan(parent, topic, msg)
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		obs.KafkaConsumeDuration.WithLabelValues(topic).Observe(time.Since(start).Seconds())
+	}()
+
+	var envelope models.EmailEvent
+	if err := json.Unmarshal(msg.Value, &envelope); err != nil {
+		obs.KafkaConsumedTotal.WithLabelValues(topic, "decode_error").Inc()
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "envelope decode failed")
+		slog.ErrorContext(ctx, "envelope decode error", "err", err, "raw", string(msg.Value))
+		return
+	}
+	span.SetAttributes(attribute.String("email.event_type", envelope.Type))
+
+	switch envelope.Type {
+	case models.EmailTypeOverdue:
+		var data models.OverdueData
+		if err := json.Unmarshal(envelope.Data, &data); err != nil {
+			obs.KafkaConsumedTotal.WithLabelValues(topic, "decode_error").Inc()
+			slog.ErrorContext(ctx, "overdue payload decode failed", "err", err)
+			return
+		}
+		if data.UserEmail == "" {
+			slog.WarnContext(ctx, "overdue event missing user email; skipping", "todo_id", data.Todo.ID)
+			obs.KafkaConsumedTotal.WithLabelValues(topic, "skipped").Inc()
+			return
+		}
+		subject, text, html := email.RenderOverdue(data)
+		email.Send(ctx, data.UserEmail, "", subject, text, html)
+
+	case models.EmailTypeDailySummary:
+		var data models.DailySummaryData
+		if err := json.Unmarshal(envelope.Data, &data); err != nil {
+			obs.KafkaConsumedTotal.WithLabelValues(topic, "decode_error").Inc()
+			slog.ErrorContext(ctx, "summary payload decode failed", "err", err)
+			return
+		}
+		if data.UserEmail == "" {
+			slog.WarnContext(ctx, "summary event missing user email; skipping", "user_id", data.UserID)
+			obs.KafkaConsumedTotal.WithLabelValues(topic, "skipped").Inc()
+			return
+		}
+		subject, text, html := email.RenderDailySummary(data)
+		email.Send(ctx, data.UserEmail, "", subject, text, html)
+
+	default:
+		obs.KafkaConsumedTotal.WithLabelValues(topic, "unknown_type").Inc()
+		slog.WarnContext(ctx, "unknown email event type; ignoring", "type", envelope.Type)
+		return
+	}
+	obs.KafkaConsumedTotal.WithLabelValues(topic, "ok").Inc()
+}
+
+// ---------- helpers ----------
+
+// startConsumerSpan extracts the W3C trace context from Kafka headers and
+// starts a child span. That's what stitches scheduler/todo-service producer
+// spans to the consumer side in Jaeger.
+func startConsumerSpan(parent context.Context, topic string, msg kafka.Message) (context.Context, trace.Span) {
+	carrier := propagation.MapCarrier{}
+	for _, h := range msg.Headers {
+		carrier[h.Key] = string(h.Value)
+	}
+	ctx := otel.GetTextMapPropagator().Extract(parent, carrier)
+	return tracer.Start(ctx, "kafka.consume "+topic,
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination.name", topic),
+			attribute.String("messaging.kafka.message.key", string(msg.Key)),
+			attribute.Int64("messaging.kafka.partition", int64(msg.Partition)),
+			attribute.Int64("messaging.kafka.offset", msg.Offset),
+		),
+	)
 }
 
 // invalidateUserTodoListCache deletes all cached first-page entries for a user.

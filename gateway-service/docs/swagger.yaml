@@ -1,0 +1,363 @@
+openapi: 3.0.3
+info:
+  title: Todo App — Gateway API
+  description: |
+    Single public-facing API for the Todo App. The gateway routes traffic to
+    the auth-service and todo-service, applies rate limiting, and propagates
+    OpenTelemetry trace context to downstream services.
+
+    Authentication: obtain a JWT from `POST /api/auth/login` or `POST /api/auth/register`,
+    then send it as `Authorization: Bearer <token>` on protected endpoints.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8090
+    description: Local docker-compose
+
+tags:
+  - name: auth
+    description: Registration, login, and identity (proxied to auth-service)
+  - name: todos
+    description: Todo CRUD, CSV import/export (proxied to todo-service)
+  - name: ops
+    description: Operational endpoints
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: Request entity too large
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: |
+        Rate limit exceeded. The `Retry-After` header tells you when to retry.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    AuthRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email, example: "user@example.com" }
+        password: { type: string, minLength: 6, example: "secret123" }
+
+    User:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        email:      { type: string, format: email }
+        created_at: { type: string, format: date-time }
+
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string, description: "JWT (24h TTL)" }
+        user:  { $ref: "#/components/schemas/User" }
+
+    MeResponse:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+
+    Todo:
+      type: object
+      properties:
+        id:         { type: string, format: uuid }
+        user_id:    { type: string, format: uuid }
+        title:      { type: string, example: "Buy milk" }
+        status:     { type: string, enum: [pending, in_progress, completed, deleted] }
+        priority:   { type: string, enum: [low, medium, high] }
+        due_date:   { type: string, format: date-time, nullable: true }
+        tags:       { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TodoRequest:
+      type: object
+      required: [title, status]
+      properties:
+        title:    { type: string, example: "Buy milk" }
+        status:   { type: string, enum: [pending, in_progress, completed, deleted] }
+        priority: { type: string, enum: [low, medium, high], default: medium }
+        due_date: { type: string, format: date-time, nullable: true }
+        tags:     { type: array, items: { type: string } }
+
+    TodosListResponse:
+      type: object
+      properties:
+        todos:       { type: array, items: { $ref: "#/components/schemas/Todo" } }
+        next_cursor: { type: string, description: "Opaque cursor for next page; empty when no more" }
+        has_more:    { type: boolean }
+
+    ImportResponse:
+      type: object
+      properties:
+        imported: { type: integer, example: 42 }
+        failed:   { type: integer, example: 3 }
+        errors:   { type: array, items: { type: string } }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: "rate_limit_exceeded" }
+
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string, example: "ok" }
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      summary: Gateway liveness check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /api/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      description: |
+        Creates a user and returns a JWT. **Rate-limited** at 3/min per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRequest" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in
+      description: |
+        Authenticates an existing user and returns a JWT. **Rate-limited** at
+        5/min per IP. Cache: user record cached in Redis for 1 minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthRequest" }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Get the current user
+      description: |
+        Returns the user identified by the JWT. **Rate-limited** at 60/min per
+        user. Cache: user record cached in Redis for 5 minutes.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/todos:
+    get:
+      tags: [todos]
+      summary: List todos (cursor-paginated)
+      description: |
+        Returns a page of todos for the authenticated user, ordered by
+        created_at DESC, id DESC. Use the response's `next_cursor` to fetch
+        the next page.
+
+        First-page responses are cached in Redis for 60 seconds and
+        invalidated by the cache-invalidator consumer when the user writes a
+        todo. **Rate-limited** at 120/min per user.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 100 }
+          description: Page size
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Opaque cursor from a previous response
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, in_progress, completed, deleted] }
+          description: Filter by status
+      responses:
+        "200":
+          description: Page of todos
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TodosListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+    post:
+      tags: [todos]
+      summary: Create a todo
+      description: |
+        Writes to Postgres synchronously and publishes a Kafka event for the
+        notification-worker (email) and cache-invalidator (Redis). **Rate-limited**
+        at 60/min per user.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TodoRequest" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Todo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/todos/{id}:
+    put:
+      tags: [todos]
+      summary: Update a todo
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TodoRequest" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Todo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+    delete:
+      tags: [todos]
+      summary: Delete a todo
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "todo deleted" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/todos/export:
+    get:
+      tags: [todos]
+      summary: Export todos as CSV
+      description: |
+        Streams the user's todos as a CSV download. **Rate-limited** at 5/hour per user.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: CSV stream
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /api/todos/import:
+    post:
+      tags: [todos]
+      summary: Import todos from CSV
+      description: |
+        Multipart upload. Streamed row-by-row; capped at 10,000 rows per upload.
+        **Rate-limited** at 5/hour per user.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+              required: [file]
+      responses:
+        "200":
+          description: Import summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+

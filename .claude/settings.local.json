@@ -48,7 +48,26 @@
       "Bash(docker compose *)",
       "Bash(lsof -nP -iTCP:9092,5432,6379 -sTCP:LISTEN)",
       "Bash(lsof -nP -iTCP:8080,5173 -sTCP:LISTEN)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:8090/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x@x.com\",\"password\":\"wrong1\"}')"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:8090/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x@x.com\",\"password\":\"wrong1\"}')",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 /tmp/verify.py)",
+      "Bash(curl -sI http://localhost:3000)",
+      "Bash(python3 /tmp/trace.py)",
+      "Bash(curl -sI http://localhost:8090/api/auth/swagger/index.html)",
+      "Bash(curl -s http://localhost:8090/api/auth/swagger/doc.json)",
+      "Bash(python3 -c 'import json,sys; d=json.load\\(sys.stdin\\); print\\(\"title:\", d.get\\(\"info\",{}\\).get\\(\"title\"\\)\\); print\\(\"paths:\", list\\(d.get\\(\"paths\",{}\\).keys\\(\\)\\)\\)')",
+      "Bash(curl -sI http://localhost:8090/api/auth/swagger/)",
+      "Bash(curl -s -i http://localhost:8090/api/auth/swagger/index.html)",
+      "Bash(curl -s http://localhost:8090/api/todos/swagger/doc.json)",
+      "Bash(curl -s http://localhost:8090/api/todos/swagger/index.html)",
+      "Bash(curl -s http://localhost:3000/api/datasources)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:9090/api/v1/targets)",
+      "Bash(python3 /tmp/prom_check.py)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/grafana_test.sh)",
+      "Bash(/tmp/grafana_test.sh)",
+      "Bash(python3 /tmp/grafana_smoke.py)"
     ]
   }
 }

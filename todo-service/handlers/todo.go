@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -21,7 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/segmentio/kafka-go"
 )
 
 const (
@@ -39,27 +38,21 @@ func isValidPriority(p models.Priority) bool {
 	return p == models.PriorityLow || p == models.PriorityMedium || p == models.PriorityHigh
 }
 
-// publishEvent publishes a fire-and-forget Kafka event for downstream consumers
-// (notification-worker for email, cache-invalidator). Errors are logged, not
-// returned — the DB write has already committed.
-func publishEvent(action string, todo models.Todo, userEmail string) {
+// publishEvent publishes a fire-and-forget Kafka event for downstream
+// consumers (notification-worker for email, cache-invalidator). Runs in a
+// goroutine — context.WithoutCancel preserves the OTel trace from the
+// request span but detaches from the request's cancellation, so the publish
+// completes even after the response is sent.
+func publishEvent(ctx context.Context, action string, todo models.Todo, userEmail string) {
 	event := models.TodoEvent{Action: action, Todo: todo, UserEmail: userEmail}
 	b, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("event marshal failed: %v", err)
+		slog.ErrorContext(ctx, "event marshal failed", "err", err, "todo_id", todo.ID)
 		return
 	}
-	if producer.KafkaWriter == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	if err := producer.KafkaWriter.WriteMessages(ctx, kafka.Message{
-		Key:   []byte(todo.ID),
-		Value: b,
-	}); err != nil {
-		log.Printf("kafka publish failed for %s: %v", todo.ID, err)
-	}
+	producer.Publish(pubCtx, []byte(todo.ID), b)
 }
 
 // GetTodos godoc
@@ -114,7 +107,7 @@ func GetTodos(c *gin.Context, db *sql.DB, cc *cache.Client) {
 			c.Data(http.StatusOK, "application/json", cached)
 			return
 		} else if err != nil && !cache.IsMiss(err) {
-			log.Printf("cache get %s: %v", cacheKey, err)
+			slog.WarnContext(c.Request.Context(), "cache get failed", "key", cacheKey, "err", err)
 		}
 	}
 
@@ -137,7 +130,7 @@ func GetTodos(c *gin.Context, db *sql.DB, cc *cache.Client) {
 
 	rows, err := db.Query(q, args...)
 	if err != nil {
-		log.Printf("query todos: %v", err)
+		slog.ErrorContext(c.Request.Context(), "query todos failed", "err", err)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to query todos"})
 		return
 	}
@@ -150,7 +143,7 @@ func GetTodos(c *gin.Context, db *sql.DB, cc *cache.Client) {
 			&t.ID, &t.UserID, &t.Title, &t.Status, &t.Priority,
 			&t.DueDate, pq.Array(&t.Tags), &t.CreatedAt, &t.UpdatedAt,
 		); err != nil {
-			log.Printf("scan todo: %v", err)
+			slog.ErrorContext(c.Request.Context(), "scan todo failed", "err", err)
 			continue
 		}
 		if t.Tags == nil {
@@ -247,12 +240,12 @@ func CreateTodo(c *gin.Context, db *sql.DB) {
 	}
 
 	if err := repository.InsertTodo(db, todo); err != nil {
-		log.Printf("insert todo: %v", err)
+		slog.ErrorContext(c.Request.Context(), "insert todo failed", "err", err, "todo_id", todo.ID, "user_id", userID)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to insert todo"})
 		return
 	}
 
-	go publishEvent(models.ActionCreate, todo, userEmail)
+	go publishEvent(c.Request.Context(), models.ActionCreate, todo, userEmail)
 
 	c.IndentedJSON(http.StatusCreated, todo)
 }
@@ -317,12 +310,12 @@ func UpdateTodo(c *gin.Context, db *sql.DB) {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "todo not found"})
 			return
 		}
-		log.Printf("update todo: %v", err)
+		slog.ErrorContext(c.Request.Context(), "update todo failed", "err", err, "todo_id", id, "user_id", userID)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to update todo"})
 		return
 	}
 
-	go publishEvent(models.ActionUpdate, updated, userEmail)
+	go publishEvent(c.Request.Context(), models.ActionUpdate, updated, userEmail)
 
 	c.IndentedJSON(http.StatusOK, updated)
 }
@@ -348,14 +341,14 @@ func DeleteTodo(c *gin.Context, db *sql.DB) {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"error": "todo not found"})
 			return
 		}
-		log.Printf("delete todo: %v", err)
+		slog.ErrorContext(c.Request.Context(), "delete todo failed", "err", err, "todo_id", id, "user_id", userID)
 		c.IndentedJSON(http.StatusInternalServerError, gin.H{"error": "failed to delete todo"})
 		return
 	}
 
 	// Publish so cache-invalidator drops the user's list cache.
 	// UserEmail empty → notification-worker won't send email for delete.
-	go publishEvent(models.ActionDelete, models.Todo{ID: id, UserID: userID}, "")
+	go publishEvent(c.Request.Context(), models.ActionDelete, models.Todo{ID: id, UserID: userID}, "")
 
 	c.IndentedJSON(http.StatusOK, gin.H{"message": "todo deleted"})
 }

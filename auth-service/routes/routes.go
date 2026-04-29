@@ -1,22 +1,33 @@
 package routes
 
 import (
-	"auth-service/cache"
-	"auth-service/handlers"
-	"auth-service/middleware"
 	"database/sql"
+	"log/slog"
 	"os"
 
+	"auth-service/cache"
+	"auth-service/handlers"
+	"auth-service/internal/obs"
+	"auth-service/middleware"
+
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func SetupRouter(db *sql.DB, cc *cache.Client) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
 
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// otelgin starts a span per request and stores it on the request context.
+	// MUST be registered before any middleware that wants the span (logger,
+	// metrics) so they can attach to it.
+	router.Use(otelgin.Middleware("auth-service"))
+	router.Use(obs.MetricsMiddleware())
+	router.Use(obs.RequestLogger())
 
+	obs.MountMetrics(router)
+
+	// Swagger UI lives at the gateway (single source of truth).
 	router.POST("/register", handlers.Register(db))
 	router.POST("/login", handlers.Login(db, cc))
 
@@ -27,6 +38,11 @@ func SetupRouter(db *sql.DB, cc *cache.Client) *gin.Engine {
 	if port == "" {
 		port = "8000"
 	}
-	router.Run("0.0.0.0:" + port)
+	addr := "0.0.0.0:" + port
+	slog.Info("auth-service listening", "addr", addr)
+	if err := router.Run(addr); err != nil {
+		slog.Error("server exit", "err", err)
+		os.Exit(1)
+	}
 	return router
 }

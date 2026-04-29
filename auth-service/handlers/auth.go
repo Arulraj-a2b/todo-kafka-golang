@@ -7,7 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -140,7 +140,7 @@ func loadUserByEmailCached(ctx context.Context, db *sql.DB, cc *cache.Client, em
 			return rec, nil
 		}
 	} else if err != nil && !cache.IsMiss(err) {
-		log.Printf("cache get %s: %v", key, err)
+		slog.WarnContext(ctx, "cache get failed", "key", key, "err", err)
 	}
 
 	var rec loginCacheRecord
@@ -181,7 +181,7 @@ func Me(db *sql.DB, cc *cache.Client) gin.HandlerFunc {
 			c.Data(http.StatusOK, "application/json", cached)
 			return
 		} else if err != nil && !cache.IsMiss(err) {
-			log.Printf("cache get %s: %v", key, err)
+			slog.WarnContext(c.Request.Context(), "cache get failed", "key", key, "err", err)
 		}
 
 		var user models.User

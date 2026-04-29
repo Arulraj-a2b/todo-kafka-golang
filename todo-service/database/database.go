@@ -1,45 +1,63 @@
 package database
 
 import (
+	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"time"
+
+	"todo-service/internal/obs"
+
+	"github.com/XSAM/otelsql"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 func InitDB() *sql.DB {
 	connStr := os.Getenv("TODO_DATABASE_URL")
 	if connStr == "" {
-		log.Fatal("TODO_DATABASE_URL not set")
+		slog.Error("TODO_DATABASE_URL not set")
+		os.Exit(1)
 	}
 
-	db, err := sql.Open("postgres", connStr)
+	db, err := otelsql.Open("postgres", connStr,
+		otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{DisableErrSkip: true}),
+	)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("sql.Open", "err", err)
+		os.Exit(1)
 	}
 
-	// Connection pool sizing — important when running N replicas behind a load
-	// balancer. With 25 max conns/instance × 10 instances = 250 backend conns
-	// to Postgres, well under PG's typical 100-500 limit. Beyond that, front
-	// PG with PgBouncer in transaction-pooling mode.
+	// Pool sizing — important when running N replicas behind a load balancer.
+	// 25 max conns/instance × 10 instances = 250 backend conns to Postgres,
+	// well under PG's typical 100-500 limit. Beyond that, front PG with
+	// PgBouncer in transaction-pooling mode.
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 
 	if err = db.Ping(); err != nil {
-		log.Fatal(err)
+		slog.Error("db.Ping", "err", err)
+		os.Exit(1)
 	}
+	slog.Info("todo db connected")
 
-	log.Println("Todo DB connected")
+	go sampleDBStats(db)
 
-	// Idempotent migrations (CREATE TABLE / INDEX IF NOT EXISTS). Safe at
-	// startup. For very large tables, switch to golang-migrate so index
-	// creation is controlled (CONCURRENTLY, off-hours) rather than blocking
-	// app boot.
 	runMigrations(db)
-
 	return db
+}
+
+func sampleDBStats(db *sql.DB) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		s := db.Stats()
+		obs.DBConnectionsInUse.Set(float64(s.InUse))
+		obs.DBConnectionsIdle.Set(float64(s.Idle))
+	}
 }
 
 func runMigrations(db *sql.DB) {
@@ -55,22 +73,20 @@ func runMigrations(db *sql.DB) {
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		);`,
-		// Composite index on (user_id, created_at DESC) — covers GetTodos,
-		// also covers cursor pagination via (created_at, id) keyset.
 		`CREATE INDEX IF NOT EXISTS idx_todos_user_created
 			ON todos (user_id, created_at DESC, id DESC);`,
-		// Partial index for status-filtered list views (e.g., Kanban "In Progress").
 		`CREATE INDEX IF NOT EXISTS idx_todos_user_status
 			ON todos (user_id, status) WHERE status != 'deleted';`,
-		// Partial index for upcoming-deadline queries.
 		`CREATE INDEX IF NOT EXISTS idx_todos_user_due
 			ON todos (user_id, due_date) WHERE due_date IS NOT NULL;`,
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
-			log.Fatalf("migration failed: %v\nstmt: %s", err, s)
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			slog.Error("migration failed", "err", err, "stmt", s)
+			os.Exit(1)
 		}
 	}
-	log.Println("Todo DB migrations applied")
+	slog.Info("todo db migrations applied")
 }

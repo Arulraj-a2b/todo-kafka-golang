@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -40,7 +40,7 @@ func ExportTodos(c *gin.Context, db *sql.DB) {
 		ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
-		log.Printf("Failed to query todos for export: %v", err)
+		slog.ErrorContext(c.Request.Context(), "export query failed", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
@@ -51,7 +51,7 @@ func ExportTodos(c *gin.Context, db *sql.DB) {
 
 	w := csv.NewWriter(c.Writer)
 	if err := w.Write([]string{"title", "status", "priority", "due_date", "tags"}); err != nil {
-		log.Printf("Failed to write CSV header: %v", err)
+		slog.ErrorContext(c.Request.Context(), "csv header write failed", "err", err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func ExportTodos(c *gin.Context, db *sql.DB) {
 		var due *time.Time
 		var tags []string
 		if err := rows.Scan(&title, &status, &priority, &due, pq.Array(&tags)); err != nil {
-			log.Printf("Failed to scan row: %v", err)
+			slog.ErrorContext(c.Request.Context(), "csv export row scan failed", "err", err)
 			continue
 		}
 		dueStr := ""

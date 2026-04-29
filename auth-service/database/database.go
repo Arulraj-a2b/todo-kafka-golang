@@ -1,40 +1,63 @@
 package database
 
 import (
+	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"os"
 	"time"
+
+	"auth-service/internal/obs"
+
+	"github.com/XSAM/otelsql"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 func InitDB() *sql.DB {
 	connStr := os.Getenv("AUTH_DATABASE_URL")
 	if connStr == "" {
-		log.Fatal("AUTH_DATABASE_URL not set")
+		slog.Error("AUTH_DATABASE_URL not set")
+		os.Exit(1)
 	}
 
-	db, err := sql.Open("postgres", connStr)
+	// otelsql.Open wraps the driver so every Exec/Query/QueryRow gets a span.
+	db, err := otelsql.Open("postgres", connStr,
+		otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{DisableErrSkip: true}),
+	)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("sql.Open", "err", err)
+		os.Exit(1)
 	}
 
-	// Pool sizing matches todo-service (see comment there). Auth traffic is
-	// even more bursty (every authenticated request can trigger a /me lookup
-	// in the absence of caching), so generous idle-conn count helps.
+	// Pool sizing — see comment in todo-service/database/database.go.
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	db.SetConnMaxIdleTime(2 * time.Minute)
 
 	if err = db.Ping(); err != nil {
-		log.Fatal(err)
+		slog.Error("db.Ping", "err", err)
+		os.Exit(1)
 	}
 
-	log.Println("Auth DB connected")
+	slog.Info("auth db connected")
+
+	// Sample DBStats every 10s into Prometheus gauges.
+	go sampleDBStats(db)
 
 	runMigrations(db)
-
 	return db
+}
+
+func sampleDBStats(db *sql.DB) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		s := db.Stats()
+		obs.DBConnectionsInUse.Set(float64(s.InUse))
+		obs.DBConnectionsIdle.Set(float64(s.Idle))
+	}
 }
 
 func runMigrations(db *sql.DB) {
@@ -45,14 +68,14 @@ func runMigrations(db *sql.DB) {
 			password_hash TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL
 		);`,
-		// (id) and (email UNIQUE) are auto-indexed; no extra indexes needed
-		// for current query patterns. Adding (created_at) only when an
-		// admin-style "list users by signup time" endpoint exists.
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
-			log.Fatalf("migration failed: %v\nstmt: %s", err, s)
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			slog.Error("migration failed", "err", err, "stmt", s)
+			os.Exit(1)
 		}
 	}
-	log.Println("Auth DB migrations applied")
+	slog.Info("auth db migrations applied")
 }

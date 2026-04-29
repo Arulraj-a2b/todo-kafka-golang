@@ -1,10 +1,13 @@
 package main
 
 import (
-	"log"
+	"context"
+	"log/slog"
+	"time"
+
 	"todo-service/cache"
 	"todo-service/database"
-	_ "todo-service/docs"
+	"todo-service/internal/obs"
 	"todo-service/kafka/producer"
 	"todo-service/routes"
 
@@ -24,9 +27,20 @@ import (
 // @name                        Authorization
 // @description                 Type "Bearer {token}" — obtain one from auth-service at :8000.
 func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found")
-	}
+	_ = godotenv.Load()
+
+	obs.InitLogger("todo-service")
+	obs.InitMetrics()
+
+	ctx := context.Background()
+	shutdown := obs.InitTracer(ctx, "todo-service")
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			slog.Error("tracer shutdown", "err", err)
+		}
+	}()
 
 	db := database.InitDB()
 	defer db.Close()

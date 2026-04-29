@@ -2,10 +2,11 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
+
+	"gateway-service/internal/obs"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis_rate/v10"
@@ -73,18 +74,14 @@ func (r *RateLimiter) middleware(bucket string, limit, windowSeconds int, keyFn 
 			Period: time.Duration(windowSeconds) * time.Second,
 		})
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-				if failClosedRoutes[bucket] {
-					abort429(c, windowSeconds)
-					return
-				}
-				c.Next()
-				return
-			}
+			// Redis errored or timed out. Fail-closed for sensitive buckets,
+			// fail-open otherwise. Either way record the decision.
 			if failClosedRoutes[bucket] {
+				obs.RateLimitDecisions.WithLabelValues(bucket, "deny_error").Inc()
 				abort429(c, windowSeconds)
 				return
 			}
+			obs.RateLimitDecisions.WithLabelValues(bucket, "allow_error").Inc()
 			c.Next()
 			return
 		}
@@ -97,9 +94,11 @@ func (r *RateLimiter) middleware(bucket string, limit, windowSeconds int, keyFn 
 			if retryAfter < 1 {
 				retryAfter = 1
 			}
+			obs.RateLimitDecisions.WithLabelValues(bucket, "deny").Inc()
 			abort429(c, retryAfter)
 			return
 		}
+		obs.RateLimitDecisions.WithLabelValues(bucket, "allow").Inc()
 		c.Next()
 	}
 }

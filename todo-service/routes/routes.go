@@ -2,21 +2,28 @@ package routes
 
 import (
 	"database/sql"
+	"log/slog"
 	"os"
+
 	"todo-service/cache"
 	"todo-service/handlers"
+	"todo-service/internal/obs"
 	"todo-service/middleware"
 
 	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func SetupRouter(db *sql.DB, cc *cache.Client) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(otelgin.Middleware("todo-service"))
+	router.Use(obs.MetricsMiddleware())
+	router.Use(obs.RequestLogger())
 
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	obs.MountMetrics(router)
 
+	// Swagger UI lives at the gateway (single source of truth).
 	auth := router.Group("/", middleware.JWT())
 	auth.GET("/todos", func(c *gin.Context) { handlers.GetTodos(c, db, cc) })
 	auth.POST("/todos", func(c *gin.Context) { handlers.CreateTodo(c, db) })
@@ -29,6 +36,11 @@ func SetupRouter(db *sql.DB, cc *cache.Client) *gin.Engine {
 	if port == "" {
 		port = "8001"
 	}
-	router.Run("0.0.0.0:" + port)
+	addr := "0.0.0.0:" + port
+	slog.Info("todo-service listening", "addr", addr)
+	if err := router.Run(addr); err != nil {
+		slog.Error("server exit", "err", err)
+		os.Exit(1)
+	}
 	return router
 }

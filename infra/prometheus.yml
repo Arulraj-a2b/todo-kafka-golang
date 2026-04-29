@@ -1,0 +1,46 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: gateway-service
+    static_configs:
+      - targets: ['gateway-service:8080']
+    metrics_path: /metrics
+
+  - job_name: auth-service
+    # docker compose with replicas → DNS round-robin. Prometheus follows A
+    # records via dns_sd_configs so each replica is scraped individually.
+    dns_sd_configs:
+      - names: ['tasks.auth-service']
+        type: A
+        port: 8000
+        refresh_interval: 30s
+    static_configs:
+      - targets: ['auth-service:8000']
+    metrics_path: /metrics
+
+  - job_name: todo-service
+    dns_sd_configs:
+      - names: ['tasks.todo-service']
+        type: A
+        port: 8001
+        refresh_interval: 30s
+    static_configs:
+      - targets: ['todo-service:8001']
+    metrics_path: /metrics
+
+  - job_name: notification-worker
+    dns_sd_configs:
+      - names: ['tasks.notification-worker']
+        type: A
+        port: 9100
+        refresh_interval: 30s
+    static_configs:
+      - targets: ['notification-worker:9100']
+    metrics_path: /metrics

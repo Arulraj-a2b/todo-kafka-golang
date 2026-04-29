@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"todo-service/models"
+	"notification-worker/models"
 )
 
 type todoEmailData struct {
@@ -28,12 +28,12 @@ type todoEmailData struct {
 
 func statusColors(s models.Status) (bg, fg, label string) {
 	label = strings.ReplaceAll(string(s), "_", " ")
-	switch s {
-	case models.StatusCompleted:
+	switch string(s) {
+	case "completed":
 		return "#d1fae5", "#065f46", label
-	case models.StatusInProgress:
+	case "in_progress":
 		return "#fef3c7", "#92400e", label
-	case models.StatusDeleted:
+	case "deleted":
 		return "#fee2e2", "#991b1b", label
 	default: // pending
 		return "#dbeafe", "#1e40af", label
@@ -41,10 +41,10 @@ func statusColors(s models.Status) (bg, fg, label string) {
 }
 
 func priorityColors(p models.Priority) (bg, fg string) {
-	switch p {
-	case models.PriorityHigh:
+	switch string(p) {
+	case "high":
 		return "#fee2e2", "#991b1b"
-	case models.PriorityMedium:
+	case "medium":
 		return "#fef3c7", "#92400e"
 	default: // low
 		return "#dbeafe", "#1e40af"
@@ -58,9 +58,6 @@ func formatDue(t *time.Time) string {
 	return t.Format("Mon, 02 Jan 2006 — 15:04 MST")
 }
 
-// htmlTmpl uses table-based layout + inline styles for broad email-client compatibility
-// (Gmail strips <style> blocks, Outlook ignores flexbox/grid). Max-width 600px is the
-// de-facto email standard.
 var htmlTmpl = template.Must(template.New("todo-email").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -137,13 +134,13 @@ func RenderTodo(action string, todo models.Todo) (subject, text, html string) {
 	verb := "create"
 	headerLabel := "TODO CREATED"
 	heading := "Your todo was created"
-	accent := "#4f46e5" // indigo
+	accent := "#4f46e5"
 	subject = "Todo created: " + todo.Title
 	if action == models.ActionUpdate {
 		verb = "update"
 		headerLabel = "TODO UPDATED"
 		heading = "Your todo was updated"
-		accent = "#0891b2" // cyan
+		accent = "#0891b2"
 		subject = "Todo updated: " + todo.Title
 	}
 

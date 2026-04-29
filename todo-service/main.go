@@ -1,11 +1,10 @@
 package main
 
 import (
-	"database/sql"
 	"log"
+	"todo-service/cache"
 	"todo-service/database"
 	_ "todo-service/docs"
-	"todo-service/kafka/consumer"
 	"todo-service/kafka/producer"
 	"todo-service/routes"
 
@@ -13,11 +12,9 @@ import (
 	_ "github.com/lib/pq"
 )
 
-var db *sql.DB
-
 // @title           Todo Service API
 // @version         1.0
-// @description     Kafka-backed todo service. Verifies JWTs issued by auth-service.
+// @description     Stateless todo service. Writes to Postgres synchronously and publishes events to Kafka for downstream consumers (notification-worker, cache-invalidator). Verifies JWTs issued by auth-service.
 // @host            localhost:8001
 // @BasePath        /
 // @schemes         http
@@ -27,8 +24,7 @@ var db *sql.DB
 // @name                        Authorization
 // @description                 Type "Bearer {token}" — obtain one from auth-service at :8000.
 func main() {
-	err := godotenv.Load()
-	if err != nil {
+	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
@@ -36,9 +32,13 @@ func main() {
 	defer db.Close()
 
 	producer.InitKafka()
-	defer producer.KafkaWriter.Close()
+	defer func() {
+		if producer.KafkaWriter != nil {
+			producer.KafkaWriter.Close()
+		}
+	}()
 
-	go consumer.InitConsumer(db)
+	cc := cache.New()
 
-	routes.SetupRouter(db)
+	routes.SetupRouter(db, cc)
 }

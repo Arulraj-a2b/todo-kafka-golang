@@ -1,6 +1,7 @@
 package main
 
 import (
+	"auth-service/cache"
 	"auth-service/database"
 	_ "auth-service/docs"
 	"auth-service/routes"
@@ -12,7 +13,7 @@ import (
 
 // @title           Auth Service API
 // @version         1.0
-// @description     User registration, login, and identity service. Issues JWTs consumed by todo-service.
+// @description     User registration, login, and identity service. Issues JWTs consumed by todo-service. User lookups are cached in Redis.
 // @host            localhost:8000
 // @BasePath        /
 // @schemes         http
@@ -29,5 +30,7 @@ func main() {
 	db := database.InitDB()
 	defer db.Close()
 
-	routes.SetupRouter(db)
+	cc := cache.New()
+
+	routes.SetupRouter(db, cc)
 }

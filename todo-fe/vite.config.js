@@ -7,17 +7,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // /api/auth/*  → auth-service :8000  (strip /api/auth prefix)
-      '/api/auth': {
-        target: 'http://localhost:8000',
+      // All /api/* traffic flows through the gateway, which handles:
+      //   /api/auth/* → auth-service :8000
+      //   /api/todos* → todo-service :8001
+      // plus rate limiting, CORS, request logging.
+      '/api': {
+        target: 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/auth/, ''),
-      },
-      // /api/todos*  → todo-service :8001  (strip just /api)
-      '/api/todos': {
-        target: 'http://localhost:8001',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },

@@ -13,9 +13,12 @@ type TodoRequest struct {
 	Tags     []string        `json:"tags,omitempty" example:"home,errand"`
 }
 
+// TodosListResponse is the cursor-paginated response shape for GET /todos.
+// next_cursor is empty when has_more is false.
 type TodosListResponse struct {
-	Todos []models.Todo `json:"todos"`
-	Total int           `json:"total" example:"3"`
+	Todos      []models.Todo `json:"todos"`
+	NextCursor string        `json:"next_cursor,omitempty" example:"eyJjIjoiMjAyNi0wNC0yOFQxMjowMDowMFoiLCJpIjoiYWJjIn0="`
+	HasMore    bool          `json:"has_more" example:"true"`
 }
 
 type MessageResponse struct {

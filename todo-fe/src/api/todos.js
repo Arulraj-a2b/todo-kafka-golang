@@ -1,10 +1,20 @@
 import client, { extractError } from './client'
 
-export async function getTodos() {
+export async function getTodos({ cursor, limit, status } = {}) {
   try {
-    const { data } = await client.get('/todos')
-    if (Array.isArray(data)) return data
-    return Array.isArray(data?.todos) ? data.todos : []
+    const params = {}
+    if (limit) params.limit = limit
+    if (cursor) params.cursor = cursor
+    if (status) params.status = status
+    const { data } = await client.get('/todos', { params })
+    if (Array.isArray(data)) {
+      return { todos: data, nextCursor: '', hasMore: false }
+    }
+    return {
+      todos: Array.isArray(data?.todos) ? data.todos : [],
+      nextCursor: data?.next_cursor || '',
+      hasMore: Boolean(data?.has_more),
+    }
   } catch (err) {
     throw extractError(err, 'Failed to load todos')
   }

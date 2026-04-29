@@ -41,7 +41,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(echo \"---AUTH EXIT $?---\")",
-      "Bash(echo \"---TODO EXIT $?---\")"
+      "Bash(echo \"---TODO EXIT $?---\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(grep -v \"^total\\\\|^d.*\\\\.\\\\.\\\\? *$\")"
     ]
   }
 }

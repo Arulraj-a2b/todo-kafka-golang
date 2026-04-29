@@ -7,6 +7,8 @@ import {
 } from '../api/todos'
 import { STATUS } from '../constants/status'
 
+const PAGE_SIZE = 50
+
 function sortTodos(list) {
   return [...list].sort((a, b) => {
     const ta = new Date(a.created_at || 0).getTime()
@@ -18,23 +20,47 @@ function sortTodos(list) {
 export default function useTodos() {
   const [todos, setTodos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState(null)
   const [creating, setCreating] = useState(false)
   const [updatingIds, setUpdatingIds] = useState(() => new Set())
   const [deletingIds, setDeletingIds] = useState(() => new Set())
+  const [nextCursor, setNextCursor] = useState('')
+  const [hasMore, setHasMore] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiList()
-      setTodos(sortTodos(data))
+      const { todos: page, nextCursor: nc, hasMore: hm } = await apiList({ limit: PAGE_SIZE })
+      setTodos(sortTodos(page))
+      setNextCursor(nc)
+      setHasMore(hm)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || !nextCursor || loadingMore) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const { todos: page, nextCursor: nc, hasMore: hm } = await apiList({
+        limit: PAGE_SIZE,
+        cursor: nextCursor,
+      })
+      setTodos((prev) => sortTodos([...prev, ...page]))
+      setNextCursor(nc)
+      setHasMore(hm)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [hasMore, nextCursor, loadingMore])
 
   useEffect(() => {
     load()
@@ -123,11 +149,14 @@ export default function useTodos() {
     todos: visible,
     counts,
     loading,
+    loadingMore,
+    hasMore,
     error,
     creating,
     updatingIds,
     deletingIds,
     load,
+    loadMore,
     create,
     update,
     remove,

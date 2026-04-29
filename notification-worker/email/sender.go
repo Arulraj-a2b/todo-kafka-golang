@@ -9,8 +9,8 @@ import (
 )
 
 // Send fires off a transactional email. Best-effort: logs and swallows errors,
-// because the caller (Kafka consumer) has already committed the user's todo.
-// No-op when SENDGRID_API_KEY is unset, so the app stays runnable in dev.
+// because the user's todo write has already committed in todo-service.
+// No-op when SENDGRID_API_KEY is unset, so the worker stays runnable in dev.
 func Send(toEmail, toName, subject, plainText, htmlBody string) {
 	apiKey := os.Getenv("SENDGRID_API_KEY")
 	if apiKey == "" {

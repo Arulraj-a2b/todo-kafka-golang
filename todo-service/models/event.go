@@ -7,8 +7,7 @@ const (
 )
 
 type TodoEvent struct {
-	Action           string `json:"action"`
-	Todo             Todo   `json:"todo"`
-	UserEmail        string `json:"user_email,omitempty"`
-	SkipNotification bool   `json:"skip_notification,omitempty"`
+	Action    string `json:"action"`
+	Todo      Todo   `json:"todo"`
+	UserEmail string `json:"user_email,omitempty"`
 }

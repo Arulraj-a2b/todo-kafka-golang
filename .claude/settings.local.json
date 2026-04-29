@@ -43,7 +43,12 @@
       "Bash(echo \"---AUTH EXIT $?---\")",
       "Bash(echo \"---TODO EXIT $?---\")",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(grep -v \"^total\\\\|^d.*\\\\.\\\\.\\\\? *$\")"
+      "Bash(grep -v \"^total\\\\|^d.*\\\\.\\\\.\\\\? *$\")",
+      "Bash(docker info *)",
+      "Bash(docker compose *)",
+      "Bash(lsof -nP -iTCP:9092,5432,6379 -sTCP:LISTEN)",
+      "Bash(lsof -nP -iTCP:8080,5173 -sTCP:LISTEN)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:8090/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x@x.com\",\"password\":\"wrong1\"}')"
     ]
   }
 }

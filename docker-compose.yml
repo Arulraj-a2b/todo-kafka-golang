@@ -8,8 +8,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
+    # No host port — host already has Postgres on 5432.
+    # Inspect with: docker compose exec postgres psql -U arul_todo
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U arul_todo"]
       interval: 5s
@@ -19,8 +19,8 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
-    ports:
-      - "6379:6379"
+    # No host port — host already has Redis/Valkey on 6379.
+    # Inspect with: docker compose exec redis redis-cli
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
@@ -31,8 +31,8 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     depends_on: [zookeeper]
-    ports:
-      - "9092:9092"
+    # No host port — host already has Kafka on 9092.
+    # Inside the docker network, services use kafka:29092.
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -103,14 +103,14 @@ services:
       - todo-service
       - redis
     ports:
-      - "8080:8080"
+      - "8090:8080"
     environment:
       GATEWAY_PORT: "8080"
       AUTH_SERVICE_URL: http://auth-service:8000
       TODO_SERVICE_URL: http://todo-service:8001
       REDIS_URL: redis://redis:6379
-    deploy:
-      replicas: 2
+    # Single replica because we publish a host port. To scale gateway, drop
+    # the ports: above and put a real load balancer (nginx/Traefik) in front.
 
   todo-fe:
     build: ./todo-fe

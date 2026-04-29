@@ -39,12 +39,15 @@ func main() {
 
 	api := router.Group("/api")
 
+	// /api/auth — explicit endpoints with tiered limits.
 	authGroup := api.Group("/auth")
 	authGroup.POST("/login", limiter.PerIP("login", 5, 60), authProxy)
 	authGroup.POST("/register", limiter.PerIP("register", 3, 60), authProxy)
 	authGroup.GET("/me", limiter.PerUser("me", 60, 60), authProxy)
-	authGroup.Any("/*path", limiter.PerIP("auth-other", 100, 60), authProxy)
+	authGroup.GET("/swagger/*any", authProxy)
 
+	// /api/todos — explicit endpoints with tiered limits. CSV import/export
+	// must come before the catch-all parameterised routes to win.
 	todoGroup := api.Group("/todos")
 	todoGroup.GET("/export", limiter.PerUser("todos-export", 5, 3600), todoProxy)
 	todoGroup.POST("/import", limiter.PerUser("todos-import", 5, 3600), todoProxy)
@@ -52,7 +55,6 @@ func main() {
 	todoGroup.POST("", limiter.PerUser("todos-write", 60, 60), todoProxy)
 	todoGroup.PUT("/:id", limiter.PerUser("todos-write", 60, 60), todoProxy)
 	todoGroup.DELETE("/:id", limiter.PerUser("todos-write", 60, 60), todoProxy)
-	todoGroup.Any("/*path", limiter.PerUser("todos-other", 60, 60), todoProxy)
 
 	addr := "0.0.0.0:" + port
 	log.Printf("Gateway listening on %s; auth=%s, todo=%s", addr, authURL, todoURL)
